@@ -3,11 +3,12 @@ import pandas as pd
 import requests
 import io
 import numpy as np
+from market_history import history
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 st.set_page_config(page_title='台股主力籌碼雷達',layout='wide')
 st.title('台股主力籌碼雷達')
-st.caption('V0.2｜公開資料與自備歷史資料｜非即時交易訊號')
+st.caption('V0.3｜公開資料與自備歷史資料｜非即時交易訊號')
 @st.cache_data(ttl=300)
 def get(url):
  r=requests.get(url,timeout=40); r.raise_for_status(); return pd.DataFrame(r.json())
@@ -51,6 +52,27 @@ def dashboard():
  with c:
   st.write('上傳全市場還原權息日線 CSV，欄位 stock,date,open,high,low,close,volume（張）。可另含 TSE 指數代號。')
   f=csv('日線歷史資料'); seg=st.number_input('每段天數',5,60,25); rs=st.checkbox('要求相對大盤強度',True)
+  st.caption('免費歷史來源 Yahoo Finance，可能限流或缺漏；首次掃描耗時較長。')
+  universe=st.selectbox('自動下載範圍',['指定股票','上市全部普通股','上櫃全部普通股','上市及上櫃普通股'])
+  codes=st.text_input('指定股票（逗號分隔，上市 .TW／上櫃 .TWO）','2313.TW,2383.TW')
+  if st.button('下載歷史資料並掃描'):
+   try:
+    symbols=[]
+    if universe=='指定股票': symbols=[x.strip().upper() for x in codes.split(',') if x.strip()]
+    else:
+     if universe in ['上市全部普通股','上市及上櫃普通股']:
+      q=get('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'); symbols.extend([str(x)+'.TW' for x in q['Code'] if str(x).isdigit() and len(str(x))==4 and not str(x).startswith('0')])
+     if universe in ['上櫃全部普通股','上市及上櫃普通股']:
+      q=get('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes'); symbols.extend([str(x)+'.TWO' for x in q['SecuritiesCompanyCode'] if str(x).isdigit() and len(str(x))==4 and not str(x).startswith('0')])
+    symbols=list(dict.fromkeys(symbols+['^TWII']))
+    with st.spinner('下載歷史行情，請保持頁面開啟'):
+     data,failed=history(symbols)
+    st.session_state['history_data']=data; st.session_state['history_status']=(len(symbols),failed)
+   except Exception as e: st.error(f'自動下載失敗：{e}')
+  if f is None and 'history_data' in st.session_state:
+   f=st.session_state['history_data']; total,failed=st.session_state['history_status']; st.caption(f'成功 {total-len(failed)} / {total} 個代號（含指數）')
+   if failed: st.warning('缺漏代號：'+', '.join(failed))
+   if f.empty: f=None
   if f is not None:
    try: st.dataframe(scan(f,int(seg),rs),hide_index=True)
    except Exception as e: st.error(str(e))
