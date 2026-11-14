@@ -3,12 +3,24 @@ import pandas as pd
 import requests
 import io
 import numpy as np
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 st.set_page_config(page_title='台股主力籌碼雷達',layout='wide')
 st.title('台股主力籌碼雷達')
-st.caption('公開資料與自備歷史資料｜非即時交易訊號')
+st.caption('V0.2｜公開資料與自備歷史資料｜非即時交易訊號')
 @st.cache_data(ttl=300)
 def get(url):
  r=requests.get(url,timeout=40); r.raise_for_status(); return pd.DataFrame(r.json())
+@st.cache_data(ttl=300)
+def institutional():
+ today=datetime.now(ZoneInfo('Asia/Taipei')).date()
+ for i in range(10):
+  day=today-timedelta(days=i)
+  if day.weekday()>4: continue
+  response=requests.get('https://www.twse.com.tw/rwd/zh/fund/T86',params={'date':day.strftime('%Y%m%d'),'selectType':'ALLBUT0999','response':'json'},headers={'User-Agent':'Mozilla/5.0'},timeout=25)
+  response.raise_for_status(); obj=response.json()
+  if obj.get('data') and obj.get('fields'): return pd.DataFrame(obj['data'],columns=obj['fields']),day.isoformat()
+ raise ValueError('最近十日無法人資料')
 def load(url):
  try: return get(url)
  except Exception as e: st.warning(f'資料取得失敗：{e}'); return pd.DataFrame()
@@ -20,10 +32,15 @@ if st.sidebar.button('立即重新抓取'): st.cache_data.clear(); st.rerun()
 def dashboard():
  a,b,c,d=st.tabs(['每日行情與法人','集保大戶','VCP 全市場','券商分點'])
  with a:
-  for title,url in [('上市每日行情','https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'),('上市三大法人','https://openapi.twse.com.tw/v1/fund/T86')]:
+  for title,url in [('上市每日行情','https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'),]:
    st.subheader(title); df=load(url)
    if not df.empty:
-    mask=df.astype(str).eq(stock).any(axis=1); st.dataframe(df[mask] if mask.any() else df.head(20),hide_index=True); st.caption('若找不到代號，顯示前20筆；日期依來源欄位。')
+    mask=df.astype(str).eq(stock).any(axis=1); st.dataframe(df[mask] if mask.any() else df.iloc[0:0],hide_index=True); st.caption('日期依來源欄位。')
+  st.subheader('上市三大法人')
+  try:
+   df,day=institutional(); st.caption('資料日期：'+day); sub=df[df.iloc[:,0].astype(str).str.strip()==stock]; st.dataframe(sub,hide_index=True)
+   if sub.empty: st.info('此代號無上市法人資料')
+  except Exception as e: st.warning(f'法人資料取得失敗：{e}')
  with b:
   try:
    r=tdcc(); sub=r[r['證券代號'].astype(str)==stock]; st.dataframe(sub,hide_index=True)
