@@ -290,7 +290,7 @@ def price_chart(frame, symbol):
     price = (
         base.mark_rule().encode(y=alt.Y('low:Q', title='價格', scale=alt.Scale(zero=False)), y2='high:Q', color=color)
         + base.mark_bar(size=3).encode(y='open:Q', y2='close:Q', color=color)
-    ).properties(height=300, title=f'{symbol} 歷史行情')
+    ).properties(height=300)
     volume = base.mark_bar(size=3).encode(
         y=alt.Y('volume:Q', title='成交量（張）'),
         color=color,
