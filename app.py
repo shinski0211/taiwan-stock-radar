@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 st.set_page_config(page_title='台股主力籌碼雷達',layout='wide')
 st.title('台股主力籌碼雷達')
-st.caption('V0.7｜公開資料與自備歷史資料｜非即時交易訊號')
+st.caption('V0.8｜公開資料與自備歷史資料｜非即時交易訊號')
 @st.cache_data(ttl=300)
 def get(url):
  r=requests.get(url,timeout=40); r.raise_for_status(); return pd.DataFrame(r.json())
@@ -30,19 +30,54 @@ def load(url):
  except Exception as e: st.warning(f'資料取得失敗：{e}'); return pd.DataFrame()
 def csv(label):
  f=st.file_uploader(label,type='csv'); return pd.read_csv(f,dtype={'stock':str,'broker':str}) if f else None
-stock=st.sidebar.text_input('股票代號','2313')
+st.markdown("""<style>
+.block-container {max-width: 1440px; padding-top: 2rem;}
+[data-testid="stMetric"] {border:1px solid #8793a333; border-radius:12px; padding:15px;}
+.stTabs [data-baseweb="tab-list"] {gap:12px; overflow-x:auto;}
+.stTabs [data-baseweb="tab"] {padding:12px 8px;}
+</style>""",unsafe_allow_html=True)
+@st.cache_data(ttl=3600)
+def stock_choices():
+ options={}
+ for url,code,name in [
+  ('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL','Code','Name'),
+  ('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes','SecuritiesCompanyCode','CompanyName')]:
+  try:
+   q=get(url)
+   for _,v in q.iterrows():
+    k=str(v[code]).strip()
+    if len(k)==4 and k.isdigit(): options[k]=str(v.get(name,k))
+  except Exception: continue
+ return options
+choices=stock_choices()
+st.caption('市場總覽 · 籌碼追蹤 · 策略驗證')
+if not choices: st.warning('市場名單暫時無法下載')
+stock=st.selectbox('個股快速瀏覽（可直接選股票名稱）',list(choices) or ['2313','2383'],format_func=lambda k:f'{choices.get(k, {"2313":"華通","2383":"台光電"}.get(k,k))} · {k}',index=None,placeholder='選擇公司，不必輸入代號')
+stock=stock or ''
+
 if st.sidebar.button('立即重新抓取'): st.cache_data.clear(); st.rerun()
 @st.fragment(run_every='5m')
 def dashboard():
  a,b,c,d,e,profile_tab=st.tabs(['每日行情與法人','集保大戶','VCP 全市場','券商分點','籌碼回測','主力屬性'])
  with a:
+  st.subheader('上市市場總覽')
+  market=load('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL')
+  if not market.empty and 'TradeVolume' in market:
+   ranked=market.copy()
+   ranked['_volume']=pd.to_numeric(ranked.TradeVolume.astype(str).str.replace(',',''),errors='coerce')
+   ranked=ranked.sort_values('_volume',ascending=False).drop(columns='_volume').head(30)
+   st.caption('上市成交量前 30 名，可直接點選一列瀏覽')
+   selected=st.dataframe(ranked,hide_index=True,on_select='rerun',selection_mode='single-row',key='market_rank')
+   if selected.selection.rows: stock_selected=str(ranked.iloc[selected.selection.rows[0]]['Code'])
+   else: stock_selected=stock
+  else: stock_selected=stock
   for title,url in [('上市每日行情','https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'),]:
    st.subheader(title); df=load(url)
    if not df.empty:
-    mask=df.astype(str).eq(stock).any(axis=1); st.dataframe(df[mask] if mask.any() else df.iloc[0:0],hide_index=True); st.caption('日期依來源欄位。')
+    mask=df.astype(str).eq(stock_selected).any(axis=1); st.dataframe(df[mask] if mask.any() else df.iloc[0:0],hide_index=True); st.caption('日期依來源欄位。')
   st.subheader('上市三大法人')
   try:
-   df,day=institutional(); st.caption('資料日期：'+day); sub=df[df.iloc[:,0].astype(str).str.strip()==stock]; st.dataframe(sub,hide_index=True)
+   df,day=institutional(); st.caption('資料日期：'+day); sub=df[df.iloc[:,0].astype(str).str.strip()==stock_selected]; st.dataframe(sub,hide_index=True)
    if sub.empty: st.info('此代號無上市法人資料')
   except Exception as e: st.warning(f'法人資料取得失敗：{e}')
  with b:
@@ -60,7 +95,7 @@ def dashboard():
   st.caption('免費歷史來源 Yahoo Finance，可能限流或缺漏；首次掃描耗時較長。')
   universe=st.selectbox('自動下載範圍',['指定股票','上市全部普通股','上櫃全部普通股','上市及上櫃普通股'],index=3)
   years=st.selectbox('歷史資料期間',['約一年半（掃描）','約六年（五年回測含暖機）'])
-  codes=st.text_input('指定股票（逗號分隔，上市 .TW／上櫃 .TWO）','2313.TW,2383.TW')
+  codes=st.text_input('指定股票（逗號分隔，上市 .TW／上櫃 .TWO）','2313.TW,2383.TW') if universe=='指定股票' else ''
   if st.button('下載歷史資料並掃描'):
    try:
     symbols=[]
