@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 st.set_page_config(page_title='台股主力籌碼雷達',layout='wide')
 st.title('台股主力籌碼雷達')
-st.caption('V0.9｜公開資料與自備歷史資料｜非即時交易訊號')
+st.caption('V0.10｜公開資料與自備歷史資料｜非即時交易訊號')
 @st.cache_data(ttl=300)
 def get(url):
  r=requests.get(url,timeout=40); r.raise_for_status(); return pd.DataFrame(r.json())
@@ -74,13 +74,16 @@ def dashboard():
    q['公司']=q.Name+' '+q.Code.astype(str)
    for col,label,value in zip(st.columns(4),['上漲','下跌','平盤','有效股票'],[(q.Change>0).sum(),(q.Change<0).sum(),(q.Change==0).sum(),len(q)]):
     col.metric(label,int(value))
-   l,r=st.columns(2)
+   l,m,r=st.columns(3)
    with l:
     st.subheader('漲幅前12名')
-    st.bar_chart(q.nlargest(12,'漲幅%').set_index('公司')['漲幅%'])
+    st.bar_chart(q[q['漲幅%']>0].nlargest(12,'漲幅%').set_index('公司')['漲幅%'],color='#d94b4b',horizontal=True)
+   with m:
+    st.subheader('跌幅前12名')
+    st.bar_chart(q[q['漲幅%']<0].nsmallest(12,'漲幅%').set_index('公司')['漲幅%'],color='#279765',horizontal=True)
    with r:
     st.subheader('成交量前12名')
-    st.bar_chart(q.nlargest(12,'成交張數').set_index('公司')['成交張數'])
+    st.bar_chart(q.nlargest(12,'成交張數').set_index('公司')['成交張數'],horizontal=True)
    for i,(_,v) in enumerate(q.nlargest(8,'TradeVolume').iterrows()):
     if i%4==0: cards=st.columns(4)
     with cards[i%4]:
