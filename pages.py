@@ -186,12 +186,18 @@ def _show_history():
     symbol = st.session_state['radar_symbol']
     suffix = st.session_state.get('radar_suffix', '.TW')
     try:
-        prices, _failed = history([symbol + suffix], 365)
+        # The shared downloader drops a symbol with fewer than 251 sessions.
+        # One calendar year is often shorter than that, so request a longer window
+        # and then keep the last year for the chart.
+        prices, _failed = history([symbol + suffix], 500)
         st.subheader(symbol + ' 歷史行情')
         if prices.empty:
             st.warning('歷史行情無資料')
             return
-        prices = prices.sort_values('date').set_index('date')
+        prices = prices.sort_values('date')
+        cutoff = prices['date'].max() - pd.Timedelta(days=365)
+        recent = prices[prices['date'] >= cutoff]
+        prices = (recent if not recent.empty else prices).set_index('date')
         needed = {'open', 'high', 'low', 'close', 'volume'}
         if needed.issubset(prices.columns):
             st.altair_chart(price_chart(prices, symbol), width='stretch')
