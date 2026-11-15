@@ -58,7 +58,18 @@ stock=stock or ''
 if st.sidebar.button('立即重新抓取'): st.cache_data.clear(); st.rerun()
 @st.fragment(run_every='5m')
 def dashboard():
- a,b,c,d,e,profile_tab=st.tabs(['每日行情與法人','集保大戶','VCP 全市場','券商分點','籌碼回測','主力屬性'])
+ a,b,c,d,e,profile_tab,supply=st.tabs(['每日行情與法人','集保大戶','VCP 全市場','券商分點','籌碼回測','主力屬性','供應鏈總整理'])
+ with supply:
+  st.subheader('雲端大廠產品供應鏈')
+  st.caption('媒體報導，非原廠確認；AWS客戶關係不等於特定Trainium世代供貨。')
+  sources=[('2026-10-29','https://www.taiwannews.com.tw/news/6467688'),('2025-11','https://money.udn.com/money/story/11162/9163631'),('2025-12-03','https://english.cw.com.tw/article/article.action?id=4491'),('2026-07-06','https://www.investing.com/news/stock-market-news/aws-trainium-3-demand-drives-taiwan-supplier-shipment-hike--digitimes-93CH-4776838')]
+  chains={'Google TPU':[('2454','聯發科','ASIC設計',0),('2330','台積電','晶圓代工',1),('2368','金像電','PCB',1),('2383','台光電','CCL',1),('3037','欣興','載板',1),('6510','精測','測試',1),('6223','旺矽','測試',1),('6442','光聖','高速傳輸',1),('3081','聯亞','光通訊驗證',1),('2356','英業達','伺服器',0),('2382','廣達','伺服器',0),('2317','鴻海','伺服器',0)],'Amazon Trainium':[('3661','世芯-KY','ASIC設計',2),('2330','台積電','代工與封裝',2),('6669','緯穎','AWS客製伺服器',2),('2345','智邦','AWS網通',2),('2317','鴻海','AWS伺服器',0),('2382','廣達','AWS伺服器',0),('3017','奇鋐','散熱',3),('2059','川湖','滑軌',3),('8210','勤誠','機殼',3)]}
+  selected=st.radio('產品平台',list(chains),horizontal=True,key='supply_theme')
+  table=pd.DataFrame([{'代號':code,'公司':name,'環節':stage,'證據':'媒體報導','來源日期':sources[i][0],'來源':sources[i][1]} for code,name,stage,i in chains[selected]])
+  query=st.text_input('搜尋公司或代號',key='supply_query').strip()
+  if query: table=table[table.astype(str).apply(lambda col:col.str.contains(query,case=False,regex=False)).any(axis=1)]
+  st.dataframe(table,hide_index=True,column_config={'來源':st.column_config.LinkColumn('來源')})
+  st.download_button('下載供應鏈清單',table.to_csv(index=False).encode('utf-8-sig'),'supply_chain.csv','text/csv',key='supply_export')
  with a:
   st.subheader('市場雷達｜上市＋上櫃')
   scope=st.radio('市場範圍',['上市＋上櫃','上市','上櫃'],horizontal=True,key='radar_market')
@@ -147,6 +158,12 @@ def dashboard():
   except Exception as e: st.warning(f'集保資料無法解析：{e}')
   st.caption('歷史變化需另存每週快照。')
  with c:
+  with st.expander('VCP 三年回測｜初步結果',expanded=True):
+   st.caption('2023-11-15 起，20 檔人工選股試跑；非全市場，存在選股偏誤。已扣交易成本，VCP 樣本不足。')
+   validation=pd.DataFrame([["單純突破",5,257,0.629907,50.583658,-0.249038],["單純突破",10,257,2.495773,57.198444,0.540741],["單純突破",20,257,8.413159,64.980545,3.99365],["VCP突破",5,2,-0.435713,50,-0.239084],["VCP突破",10,2,-1.031407,50,-1.346763],["VCP突破",20,2,-0.699714,50,-2.001223],["VCP前期",5,7,-2.748743,0,-2.702461],["VCP前期",10,7,-1.679284,42.857143,-3.071645],["VCP前期",20,7,-2.203317,57.142857,-3.067454]],columns=['策略','持有交易日','樣本數','平均淨報酬%','勝率%','超額報酬%'])
+   horizon=st.radio('持有期間',[5,10,20],index=2,horizontal=True,key='validation_horizon')
+   st.dataframe(validation[validation['持有交易日']==horizon].round(2),hide_index=True)
+   st.markdown('[回測執行紀錄與原始資料](https://github.com/shinski0211/taiwan-stock-radar/actions/runs/43701627229)')
   st.write('自動下載上市及上櫃還原權息日線，不需自行準備 CSV。')
   with st.expander('進階：手動上傳 CSV（備用）'):
    f=csv('日線歷史資料')
