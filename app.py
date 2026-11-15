@@ -58,7 +58,22 @@ stock=stock or ''
 if st.sidebar.button('立即重新抓取'): st.cache_data.clear(); st.rerun()
 @st.fragment(run_every='5m')
 def dashboard():
- a,b,c,d,e,profile_tab=st.tabs(['每日行情與法人','集保大戶','VCP 全市場','券商分點','籌碼回測','主力屬性'])
+ a,b,c,d,e,profile_tab,supply=st.tabs(['每日行情與法人','集保大戶','VCP 全市場','券商分點','籌碼回測','主力屬性','供應鏈總整理'])
+ with supply:
+  st.subheader('供應鏈總整理')
+  st.caption('初版人工分類，僅代表產品或產業關聯，非已確認客戶、訂單或供貨關係；名單非完整市場。')
+  chains={
+   'AI伺服器':{'晶圓製造':['2330'],'伺服器ODM':['2382','2317','3231','6669'],'電源與散熱':['2308','3017','3324'],'高速網路':['2345','6285'],'PCB與材料':['2383','2313','2368']},
+   '半導體':{'晶圓代工':['2330','2303','5347'],'IC設計':['2454','2379','3034'],'封裝測試':['3711','2449','6239'],'設備與廠務':['2404','6196','6139','5536']},
+   '記憶體與儲存':{'DRAM與快閃記憶體':['2408','2344','2337'],'控制晶片':['8299','2451'],'模組與SSD':['3260','4967','2451']},
+   '低軌衛星':{'PCB':['2313'],'射頻微波元件':['3491'],'天線與通訊設備':['3138','6285']}}
+  selected=st.selectbox('供應鏈主題',list(chains),key='supply_theme')
+  rows=[{'環節':stage,'代號':code,'公司':choices.get(code,code)} for stage,codes in chains[selected].items() for code in codes]
+  table=pd.DataFrame(rows)
+  query=st.text_input('搜尋公司或代號',key='supply_query').strip()
+  if query: table=table[table.astype(str).apply(lambda col:col.str.contains(query,case=False,regex=False)).any(axis=1)]
+  st.dataframe(table,hide_index=True,use_container_width=True)
+  st.download_button('下載供應鏈清單',table.to_csv(index=False).encode('utf-8-sig'),'supply_chain.csv','text/csv',key='supply_export')
  with a:
   st.subheader('市場雷達｜上市＋上櫃')
   scope=st.radio('市場範圍',['上市＋上櫃','上市','上櫃'],horizontal=True,key='radar_market')
