@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 st.set_page_config(page_title='台股主力籌碼雷達',layout='wide')
 st.title('台股主力籌碼雷達')
-st.caption('V0.6｜公開資料與自備歷史資料｜非即時交易訊號')
+st.caption('V0.7｜公開資料與自備歷史資料｜非即時交易訊號')
 @st.cache_data(ttl=300)
 def get(url):
  r=requests.get(url,timeout=40); r.raise_for_status(); return pd.DataFrame(r.json())
@@ -53,10 +53,13 @@ def dashboard():
   except Exception as e: st.warning(f'集保資料無法解析：{e}')
   st.caption('歷史變化需另存每週快照。')
  with c:
-  st.write('上傳全市場還原權息日線 CSV，欄位 stock,date,open,high,low,close,volume（張）。可另含 TSE 指數代號。')
-  f=csv('日線歷史資料'); seg=st.number_input('每段天數',5,60,25); rs=st.checkbox('要求相對大盤強度',True)
+  st.write('自動下載上市及上櫃還原權息日線，不需自行準備 CSV。')
+  with st.expander('進階：手動上傳 CSV（備用）'):
+   f=csv('日線歷史資料')
+  seg=st.number_input('每段天數',5,60,25); rs=st.checkbox('要求相對大盤強度',True)
   st.caption('免費歷史來源 Yahoo Finance，可能限流或缺漏；首次掃描耗時較長。')
-  universe=st.selectbox('自動下載範圍',['指定股票','上市全部普通股','上櫃全部普通股','上市及上櫃普通股'])
+  universe=st.selectbox('自動下載範圍',['指定股票','上市全部普通股','上櫃全部普通股','上市及上櫃普通股'],index=3)
+  years=st.selectbox('歷史資料期間',['約一年半（掃描）','約六年（五年回測含暖機）'])
   codes=st.text_input('指定股票（逗號分隔，上市 .TW／上櫃 .TWO）','2313.TW,2383.TW')
   if st.button('下載歷史資料並掃描'):
    try:
@@ -69,7 +72,7 @@ def dashboard():
       q=get('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes'); symbols.extend([str(x)+'.TWO' for x in q['SecuritiesCompanyCode'] if str(x).isdigit() and len(str(x))==4 and not str(x).startswith('0')])
     symbols=list(dict.fromkeys(symbols+['^TWII']))
     with st.spinner('下載歷史行情，請保持頁面開啟'):
-     data,failed=history(symbols)
+     data,failed=history(symbols,550 if years.startswith('約一年') else 2250)
     st.session_state['history_data']=data; st.session_state['history_status']=(len(symbols),failed)
    except Exception as e: st.error(f'自動下載失敗：{e}')
   if f is None and 'history_data' in st.session_state:
@@ -77,6 +80,7 @@ def dashboard():
    if failed: st.warning('缺漏代號：'+', '.join(failed))
    if f.empty: f=None
   if f is not None:
+   st.download_button('下載還原權息日線 CSV',f.to_csv(index=False).encode('utf-8-sig'),'adjusted_daily.csv','text/csv')
    try: st.dataframe(scan(f,int(seg),rs),hide_index=True)
    except Exception as e: st.error(str(e))
  with d:
@@ -105,6 +109,8 @@ def dashboard():
   st.caption('訊號公布日後的下一交易日開盤進場，第 N 個交易日收盤出場；包含手續費與交易稅。賣超訊號也以做多報酬觀察，不代表放空交易。')
   st.write('價格 CSV：stock,date,open,close（還原權息）。分點 CSV：stock,available_date,broker,buy_qty,sell_qty（股數）。集保 CSV：stock,available_date,pct400,pct1000（百分比）。available_date 必須是實際公布日，不是資料統計日。')
   prices=csv('回測股價 CSV'); brokers=csv('回測分點 CSV'); holders=csv('回測大戶 CSV')
+  if prices is None and 'history_data' in st.session_state and not st.session_state['history_data'].empty:
+   prices=st.session_state['history_data']; st.caption('使用 VCP 頁面已自動下載的歷史行情。')
   lots=st.number_input('分點淨買賣超門檻（張）',1,100000,500)
   change=st.number_input('大戶持股變化門檻（百分點）',0.01,100.,0.5)
   include_vcp=st.checkbox('加入歷史 VCP 突破（價格需含 high,low,volume 張）',False)
