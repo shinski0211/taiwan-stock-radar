@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 st.set_page_config(page_title='台股主力籌碼雷達',layout='wide')
 st.title('台股主力籌碼雷達')
-st.caption('V0.10｜公開資料與自備歷史資料｜非即時交易訊號')
+st.caption('V0.11｜公開資料與自備歷史資料｜非即時交易訊號')
 @st.cache_data(ttl=300)
 def get(url):
  r=requests.get(url,timeout=40); r.raise_for_status(); return pd.DataFrame(r.json())
@@ -60,8 +60,27 @@ if st.sidebar.button('立即重新抓取'): st.cache_data.clear(); st.rerun()
 def dashboard():
  a,b,c,d,e,profile_tab=st.tabs(['每日行情與法人','集保大戶','VCP 全市場','券商分點','籌碼回測','主力屬性'])
  with a:
-  st.subheader('市場雷達')
-  q=load('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL')
+  st.subheader('市場雷達｜上市＋上櫃')
+  scope=st.radio('市場範圍',['上市＋上櫃','上市','上櫃'],horizontal=True,key='radar_market')
+  frames=[]
+  for market_name,url,rename in [
+   ('上市','https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL',{}),
+   ('上櫃','https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes',{'SecuritiesCompanyCode':'Code','CompanyName':'Name','Close':'ClosingPrice','TradingShares':'TradeVolume'})]:
+   if scope!='上市＋上櫃' and scope!=market_name: continue
+   part=load(url).rename(columns=rename)
+   if not {'Code','Name','ClosingPrice','Change','TradeVolume'}.issubset(part.columns) or part.empty:
+    st.warning(market_name+'行情缺漏，以下統計不包含該市場'); continue
+   part=part.copy()
+   part['市場']=market_name
+   part['Code']=part['Code'].astype(str).str.strip()
+   if 'Date' in part: st.caption(market_name+'行情日期：'+str(part['Date'].iloc[0]))
+   frames.append(part)
+  q=pd.concat(frames,ignore_index=True) if frames else pd.DataFrame()
+  if len(frames)==2 and all('Date' in f for f in frames):
+   dates=[str(f['Date'].iloc[0]).strip() for f in frames]
+   if dates[0]!=dates[1]:
+    st.warning('上市與上櫃行情日期不同，請分開查看。')
+    q=pd.DataFrame()
   if {'Code','Name','ClosingPrice','Change','TradeVolume'}.issubset(q.columns):
    q=q.copy()
    q=q[q.Code.astype(str).str.fullmatch(r'[1-9][0-9]{3}')]
@@ -71,8 +90,9 @@ def dashboard():
    q=q[q.ClosingPrice-q.Change>0].copy()
    q['漲幅%']=100*q.Change/(q.ClosingPrice-q.Change)
    q['成交張數']=q.TradeVolume/1000
-   q['公司']=q.Name+' '+q.Code.astype(str)
-   for col,label,value in zip(st.columns(4),['上漲','下跌','平盤','有效股票'],[(q.Change>0).sum(),(q.Change<0).sum(),(q.Change==0).sum(),len(q)]):
+   q['公司']=q.Name+' '+q.Code.astype(str)+' ('+q['市場']+')'
+   st.caption('上市 '+str((q['市場']=='上市').sum())+' 家｜上櫃 '+str((q['市場']=='上櫃').sum())+' 家（依所選範圍及有效行情）')
+   for col,label,value in zip(st.columns(4),['上漲','下跌','平盤','行情統計家數'],[(q.Change>0).sum(),(q.Change<0).sum(),(q.Change==0).sum(),len(q)]):
     col.metric(label,int(value))
    l,m,r=st.columns(3)
    with l:
@@ -88,11 +108,11 @@ def dashboard():
     if i%4==0: cards=st.columns(4)
     with cards[i%4]:
      st.metric(v['公司'],f"{v.ClosingPrice:.2f}",f"{v['漲幅%']:+.2f}%")
-     if st.button('查看走勢',key='radar_'+str(v.Code)): st.session_state['radar_symbol']=str(v.Code)
+     if st.button('查看走勢',key='radar_'+str(v.Code)): st.session_state['radar_symbol']=str(v.Code); st.session_state['radar_suffix']='.TWO' if v['市場']=='上櫃' else '.TW'
    if st.session_state.get('radar_symbol'):
     try:
      symbol=st.session_state['radar_symbol']
-     h,failed=history([symbol+'.TW'],365)
+     h,failed=history([symbol+st.session_state.get('radar_suffix','.TW')],365)
      st.subheader(symbol+' 歷史行情')
      if not h.empty:
       h=h.sort_values('date').set_index('date')
