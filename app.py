@@ -60,19 +60,15 @@ if st.sidebar.button('立即重新抓取'): st.cache_data.clear(); st.rerun()
 def dashboard():
  a,b,c,d,e,profile_tab,supply=st.tabs(['每日行情與法人','集保大戶','VCP 全市場','券商分點','籌碼回測','主力屬性','供應鏈總整理'])
  with supply:
-  st.subheader('供應鏈總整理')
-  st.caption('初版人工分類，僅代表產品或產業關聯，非已確認客戶、訂單或供貨關係；名單非完整市場。')
-  chains={
-   'AI伺服器':{'晶圓製造':['2330'],'伺服器ODM':['2382','2317','3231','6669'],'電源與散熱':['2308','3017','3324'],'高速網路':['2345','6285'],'PCB與材料':['2383','2313','2368']},
-   '半導體':{'晶圓代工':['2330','2303','5347'],'IC設計':['2454','2379','3034'],'封裝測試':['3711','2449','6239'],'設備與廠務':['2404','6196','6139','5536']},
-   '記憶體與儲存':{'DRAM與快閃記憶體':['2408','2344','2337'],'控制晶片':['8299','2451'],'模組與SSD':['3260','4967','2451']},
-   '低軌衛星':{'PCB':['2313'],'射頻微波元件':['3491'],'天線與通訊設備':['3138','6285']}}
-  selected=st.selectbox('供應鏈主題',list(chains),key='supply_theme')
-  rows=[{'環節':stage,'代號':code,'公司':choices.get(code,code)} for stage,codes in chains[selected].items() for code in codes]
-  table=pd.DataFrame(rows)
+  st.subheader('雲端大廠產品供應鏈')
+  st.caption('媒體報導，非原廠確認；AWS客戶關係不等於特定Trainium世代供貨。')
+  sources=[('2026-10-29','https://www.taiwannews.com.tw/news/6467688'),('2025-11','https://money.udn.com/money/story/11162/9163631'),('2025-12-03','https://english.cw.com.tw/article/article.action?id=4491'),('2026-07-06','https://www.investing.com/news/stock-market-news/aws-trainium-3-demand-drives-taiwan-supplier-shipment-hike--digitimes-93CH-4776838')]
+  chains={'Google TPU':[('2454','聯發科','ASIC設計',0),('2330','台積電','晶圓代工',1),('2368','金像電','PCB',1),('2383','台光電','CCL',1),('3037','欣興','載板',1),('6510','精測','測試',1),('6223','旺矽','測試',1),('6442','光聖','高速傳輸',1),('3081','聯亞','光通訊驗證',1),('2356','英業達','伺服器',0),('2382','廣達','伺服器',0),('2317','鴻海','伺服器',0)],'Amazon Trainium':[('3661','世芯-KY','ASIC設計',2),('2330','台積電','代工與封裝',2),('6669','緯穎','AWS客製伺服器',2),('2345','智邦','AWS網通',2),('2317','鴻海','AWS伺服器',0),('2382','廣達','AWS伺服器',0),('3017','奇鋐','散熱',3),('2059','川湖','滑軌',3),('8210','勤誠','機殼',3)]}
+  selected=st.radio('產品平台',list(chains),horizontal=True,key='supply_theme')
+  table=pd.DataFrame([{'代號':code,'公司':name,'環節':stage,'證據':'媒體報導','來源日期':sources[i][0],'來源':sources[i][1]} for code,name,stage,i in chains[selected]])
   query=st.text_input('搜尋公司或代號',key='supply_query').strip()
   if query: table=table[table.astype(str).apply(lambda col:col.str.contains(query,case=False,regex=False)).any(axis=1)]
-  st.dataframe(table,hide_index=True,use_container_width=True)
+  st.dataframe(table,hide_index=True,column_config={'來源':st.column_config.LinkColumn('來源')})
   st.download_button('下載供應鏈清單',table.to_csv(index=False).encode('utf-8-sig'),'supply_chain.csv','text/csv',key='supply_export')
  with a:
   st.subheader('市場雷達｜上市＋上櫃')
