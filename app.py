@@ -5,12 +5,13 @@ import io
 import numpy as np
 from market_history import history
 from backtest import run, chips
+from combined import vcp_events, confluence
 from broker_profile import profiles, profile_signals
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 st.set_page_config(page_title='台股主力籌碼雷達',layout='wide')
 st.title('台股主力籌碼雷達')
-st.caption('V0.5｜公開資料與自備歷史資料｜非即時交易訊號')
+st.caption('V0.6｜公開資料與自備歷史資料｜非即時交易訊號')
 @st.cache_data(ttl=300)
 def get(url):
  r=requests.get(url,timeout=40); r.raise_for_status(); return pd.DataFrame(r.json())
@@ -106,17 +107,25 @@ def dashboard():
   prices=csv('回測股價 CSV'); brokers=csv('回測分點 CSV'); holders=csv('回測大戶 CSV')
   lots=st.number_input('分點淨買賣超門檻（張）',1,100000,500)
   change=st.number_input('大戶持股變化門檻（百分點）',0.01,100.,0.5)
+  include_vcp=st.checkbox('加入歷史 VCP 突破（價格需含 high,low,volume 張）',False)
+  relative=st.checkbox('VCP 要求相對大盤強度（需 TSE 指數）',True)
+  lookback=st.number_input('籌碼交叉訊號有效日曆天數',1,60,14)
   if st.button('開始籌碼回測'):
    try:
-    if prices is None or (brokers is None and holders is None): st.warning('必須先提供真實歷史股價及至少一種籌碼資料。')
+    if prices is None or (brokers is None and holders is None and not include_vcp): st.warning('必須先提供真實歷史股價及至少一種籌碼資料。')
     else:
      signals=chips(brokers,holders,lots,change)
      if brokers is not None and 'date' in brokers.columns:
       signals=pd.concat([signals,profile_signals(brokers,lots)],ignore_index=True)
+     if include_vcp:
+      if relative and not prices.stock.eq('TSE').any(): raise ValueError('相對強度需要 TSE 指數資料')
+      signals=pd.concat([signals,vcp_events(prices,relative)],ignore_index=True)
+     signals=pd.concat([signals,confluence(signals,lookback)],ignore_index=True)
      summary,trades=run(prices,signals)
      if summary.empty: st.warning('沒有足夠可配對的歷史樣本')
      else:
-      st.dataframe(summary,hide_index=True)
+      st.dataframe(summary.sort_values(['days','mean'],ascending=[True,False]),hide_index=True)
+      st.caption('排名依平均報酬，未控制樣本數及多重比較；不能直接視為投資建議。')
       st.download_button('下載逐筆回測結果',trades.to_csv(index=False).encode('utf-8-sig'),'backtest.csv','text/csv')
    except Exception as err: st.error(str(err))
   st.caption('事件樣本可能重疊；目前不是資金配置回測，不計算資產最大回撤。尚未加入下市股完整樣本。')
