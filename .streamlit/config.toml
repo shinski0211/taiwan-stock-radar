@@ -1,0 +1,27 @@
+[theme]
+base = "light"
+primaryColor = "#9F2D2D"
+backgroundColor = "#F7F5F2"
+secondaryBackgroundColor = "#FFFCF8"
+textColor = "#1C1917"
+borderColor = "#E4DCD0"
+dataframeBorderColor = "#E4DCD0"
+dataframeHeaderBackgroundColor = "#F3EEE6"
+dataframeHeaderTextColor = "#3F3A34"
+redColor = "#C4312E"
+greenColor = "#1F7A4D"
+redTextColor = "#8C2422"
+greenTextColor = "#146443"
+redBackgroundColor = "#F8E8E6"
+greenBackgroundColor = "#E7F3EC"
+baseRadius = "medium"
+baseFontSize = 16
+font = "Noto Sans TC:https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap, sans-serif"
+headingFontSizes = ["2rem", "1.45rem", "1.15rem"]
+chartCategoricalColors = ["#C4312E", "#1F7A4D", "#3E5568"]
+
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
