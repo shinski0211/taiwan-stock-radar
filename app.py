@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 st.set_page_config(page_title='台股主力籌碼雷達',layout='wide')
 st.title('台股主力籌碼雷達')
-st.caption('V0.8｜公開資料與自備歷史資料｜非即時交易訊號')
+st.caption('V0.9｜公開資料與自備歷史資料｜非即時交易訊號')
 @st.cache_data(ttl=300)
 def get(url):
  r=requests.get(url,timeout=40); r.raise_for_status(); return pd.DataFrame(r.json())
@@ -60,6 +60,42 @@ if st.sidebar.button('立即重新抓取'): st.cache_data.clear(); st.rerun()
 def dashboard():
  a,b,c,d,e,profile_tab=st.tabs(['每日行情與法人','集保大戶','VCP 全市場','券商分點','籌碼回測','主力屬性'])
  with a:
+  st.subheader('市場雷達')
+  q=load('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL')
+  if {'Code','Name','ClosingPrice','Change','TradeVolume'}.issubset(q.columns):
+   q=q.copy()
+   q=q[q.Code.astype(str).str.fullmatch(r'[1-9][0-9]{3}')]
+   for k in ['ClosingPrice','Change','TradeVolume']:
+    q[k]=pd.to_numeric(q[k].astype(str).str.replace(',','',regex=False),errors='coerce')
+   q=q.dropna(subset=['ClosingPrice','Change','TradeVolume'])
+   q=q[q.ClosingPrice-q.Change>0].copy()
+   q['漲幅%']=100*q.Change/(q.ClosingPrice-q.Change)
+   q['成交張數']=q.TradeVolume/1000
+   q['公司']=q.Name+' '+q.Code.astype(str)
+   for col,label,value in zip(st.columns(4),['上漲','下跌','平盤','有效股票'],[(q.Change>0).sum(),(q.Change<0).sum(),(q.Change==0).sum(),len(q)]):
+    col.metric(label,int(value))
+   l,r=st.columns(2)
+   with l:
+    st.subheader('漲幅前12名')
+    st.bar_chart(q.nlargest(12,'漲幅%').set_index('公司')['漲幅%'])
+   with r:
+    st.subheader('成交量前12名')
+    st.bar_chart(q.nlargest(12,'成交張數').set_index('公司')['成交張數'])
+   for i,(_,v) in enumerate(q.nlargest(8,'TradeVolume').iterrows()):
+    if i%4==0: cards=st.columns(4)
+    with cards[i%4]:
+     st.metric(v['公司'],f"{v.ClosingPrice:.2f}",f"{v['漲幅%']:+.2f}%")
+     if st.button('查看走勢',key='radar_'+str(v.Code)): st.session_state['radar_symbol']=str(v.Code)
+   if st.session_state.get('radar_symbol'):
+    try:
+     symbol=st.session_state['radar_symbol']
+     h,failed=history([symbol+'.TW'],365)
+     st.subheader(symbol+' 歷史行情')
+     if not h.empty:
+      h=h.sort_values('date').set_index('date')
+      st.line_chart(h[['close']]); st.bar_chart(h[['volume']])
+     else: st.warning('歷史行情無資料')
+    except Exception as err: st.warning(str(err))
   st.subheader('上市市場總覽')
   market=load('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL')
   if not market.empty and 'TradeVolume' in market:
