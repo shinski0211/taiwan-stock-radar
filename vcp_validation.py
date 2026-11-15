@@ -17,10 +17,10 @@ def comparison_events(prices, require_rs=True):
         depth=(hi-lo)/hi
         avg=v.shift(1).rolling(50).mean()
         setup=(depth.shift(50)>=.10)&(depth.shift(50)>depth.shift(25))&(depth.shift(25)>depth)&(depth<=.10)&(v.shift(1).rolling(10).mean()<.7*avg)
-        signal=trend&setup&(c.shift(1)<=hi)&(c>hi)&(v>1.5*avg)&(v>=500)
+        signal=(pd.Series(np.arange(len(g)),index=g.index)>=259)&trend&setup&(c.shift(1)<=hi.shift(1))&(c>hi)&(v>1.5*avg)&(v>=500)
         if require_rs: signal &= c.pct_change(250,fill_method=None)>=ix.reindex(g.index).pct_change(250,fill_method=None)
         early=trend&setup&(c<=hi)&(c>=.95*hi)
-        plain=trend&(c.shift(1)<=hi)&(c>hi)&(v>1.5*avg)&(v>=500)
+        plain=trend&(c.shift(1)<=hi.shift(1))&(c>hi)&(v>1.5*avg)&(v>=500)
         if require_rs:
             rs=c.pct_change(250,fill_method=None)>=ix.reindex(g.index).pct_change(250,fill_method=None)
             early &= rs
@@ -36,10 +36,18 @@ if __name__=='__main__':
     import sys, yfinance as yf
     from backtest import run
     tickers=['2330.TW','2317.TW','2454.TW','2308.TW','2382.TW','2383.TW','2313.TW','2303.TW','3231.TW','2379.TW','3034.TW','3661.TW','6669.TW','2345.TW','3017.TW','5274.TWO','3529.TWO','6488.TWO','6147.TWO','8299.TWO','^TWII']
+    import requests
+    tickers=[]
+    for url,key,suffix in [('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL','Code','.TW'),('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes','SecuritiesCompanyCode','.TWO')]:
+        response=requests.get(url,timeout=60); response.raise_for_status()
+        codes=[str(row[key]).strip() for row in response.json()]
+        tickers.extend(code+suffix for code in codes if len(code)==4 and code.isdigit() and code[0]!='0')
+    tickers=list(dict.fromkeys(tickers))+['^TWII']
+    print('Universe:',len(tickers))
     frames=[]; failed=[]
     for ticker in tickers:
         try:
-            g=yf.download(ticker,start='2022-09-01',end='2026-11-15',auto_adjust=True,progress=False,threads=False)
+            g=yf.download(ticker,start='2022-06-01',end='2026-11-15',auto_adjust=True,progress=False,threads=False)
             if isinstance(g.columns,pd.MultiIndex): g.columns=g.columns.get_level_values(0)
             g=g.rename(columns=str.lower).dropna(subset=['open','high','low','close','volume']).reset_index()
             if len(g)<270: raise ValueError('insufficient history')
