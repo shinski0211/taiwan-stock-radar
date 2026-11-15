@@ -9,6 +9,7 @@ from data_access import get, institutional, load, tdcc
 from engine import branch, scan
 from market_history import history
 from podcasts import render_podcast_card, render_podcasts
+from robot_supply import render_robots
 from present import (
     DOWN,
     UP,
@@ -561,6 +562,7 @@ PAGES = {
         st.Page(render_market, title='每日行情與法人', url_path='market'),
         st.Page(render_holders, title='集保大戶', url_path='holders'),
         st.Page(render_supply, title='供應鏈總整理', url_path='supply'),
+        st.Page(render_robots, title='機器人供應鏈', url_path='robots'),
     ],
     '策略': [
         st.Page(render_vcp, title='VCP 全市場', url_path='vcp'),
