@@ -4,11 +4,12 @@ import requests
 import io
 import numpy as np
 from market_history import history
+from backtest import run, chips
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 st.set_page_config(page_title='台股主力籌碼雷達',layout='wide')
 st.title('台股主力籌碼雷達')
-st.caption('V0.3｜公開資料與自備歷史資料｜非即時交易訊號')
+st.caption('V0.4｜公開資料與自備歷史資料｜非即時交易訊號')
 @st.cache_data(ttl=300)
 def get(url):
  r=requests.get(url,timeout=40); r.raise_for_status(); return pd.DataFrame(r.json())
@@ -31,7 +32,7 @@ stock=st.sidebar.text_input('股票代號','2313')
 if st.sidebar.button('立即重新抓取'): st.cache_data.clear(); st.rerun()
 @st.fragment(run_every='5m')
 def dashboard():
- a,b,c,d=st.tabs(['每日行情與法人','集保大戶','VCP 全市場','券商分點'])
+ a,b,c,d,e=st.tabs(['每日行情與法人','集保大戶','VCP 全市場','券商分點','籌碼回測'])
  with a:
   for title,url in [('上市每日行情','https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'),]:
    st.subheader(title); df=load(url)
@@ -83,6 +84,24 @@ def dashboard():
    try: st.dataframe(branch(f,broker,fee/100,tax/100),hide_index=True)
    except Exception as e: st.error(str(e))
   st.caption('以可觀察期間加權成本推估；未知期初庫存、跨分點、當日成交順序都可能造成誤差。')
+ with e:
+  st.subheader('歷史籌碼事件回測')
+  st.caption('訊號公布日後的下一交易日開盤進場，第 N 個交易日收盤出場；包含手續費與交易稅。賣超訊號也以做多報酬觀察，不代表放空交易。')
+  st.write('價格 CSV：stock,date,open,close（還原權息）。分點 CSV：stock,available_date,broker,buy_qty,sell_qty（股數）。集保 CSV：stock,available_date,pct400,pct1000（百分比）。available_date 必須是實際公布日，不是資料統計日。')
+  prices=csv('回測股價 CSV'); brokers=csv('回測分點 CSV'); holders=csv('回測大戶 CSV')
+  lots=st.number_input('分點淨買賣超門檻（張）',1,100000,500)
+  change=st.number_input('大戶持股變化門檻（百分點）',0.01,100.,0.5)
+  if st.button('開始籌碼回測'):
+   try:
+    if prices is None or (brokers is None and holders is None): st.warning('必須先提供真實歷史股價及至少一種籌碼資料。')
+    else:
+     summary,trades=run(prices,chips(brokers,holders,lots,change))
+     if summary.empty: st.warning('沒有足夠可配對的歷史樣本')
+     else:
+      st.dataframe(summary,hide_index=True)
+      st.download_button('下載逐筆回測結果',trades.to_csv(index=False).encode('utf-8-sig'),'backtest.csv','text/csv')
+   except Exception as err: st.error(str(err))
+  st.caption('事件樣本可能重疊；目前不是資金配置回測，不計算資產最大回撤。尚未加入下市股完整樣本。')
 @st.cache_data(ttl=300)
 def tdcc():
  r=requests.get('https://opendata.tdcc.com.tw/getOD.ashx?id=1-5',timeout=40); r.raise_for_status(); return pd.read_csv(io.BytesIO(r.content),encoding='utf-8-sig',dtype=str)
