@@ -5,11 +5,12 @@ import io
 import numpy as np
 from market_history import history
 from backtest import run, chips
+from broker_profile import profiles, profile_signals
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 st.set_page_config(page_title='台股主力籌碼雷達',layout='wide')
 st.title('台股主力籌碼雷達')
-st.caption('V0.4｜公開資料與自備歷史資料｜非即時交易訊號')
+st.caption('V0.5｜公開資料與自備歷史資料｜非即時交易訊號')
 @st.cache_data(ttl=300)
 def get(url):
  r=requests.get(url,timeout=40); r.raise_for_status(); return pd.DataFrame(r.json())
@@ -32,7 +33,7 @@ stock=st.sidebar.text_input('股票代號','2313')
 if st.sidebar.button('立即重新抓取'): st.cache_data.clear(); st.rerun()
 @st.fragment(run_every='5m')
 def dashboard():
- a,b,c,d,e=st.tabs(['每日行情與法人','集保大戶','VCP 全市場','券商分點','籌碼回測'])
+ a,b,c,d,e,profile_tab=st.tabs(['每日行情與法人','集保大戶','VCP 全市場','券商分點','籌碼回測','主力屬性'])
  with a:
   for title,url in [('上市每日行情','https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'),]:
    st.subheader(title); df=load(url)
@@ -84,6 +85,20 @@ def dashboard():
    try: st.dataframe(branch(f,broker,fee/100,tax/100),hide_index=True)
    except Exception as e: st.error(str(e))
   st.caption('以可觀察期間加權成本推估；未知期初庫存、跨分點、當日成交順序都可能造成誤差。')
+ with profile_tab:
+  st.subheader('主力行為與公司關聯候選')
+  st.caption('分點包含多位客戶，無法確認公司派、市場派或實際隔日沖。以下為未校準行為指標，不是身分機率。')
+  pf=csv('主力行為歷史 CSV（date,stock,broker,buy_qty,sell_qty）')
+  window=st.selectbox('觀察日曆天數',[30,60,90,180],index=1)
+  if pf is not None and st.button('分析主力行為'):
+   try:
+    p=profiles(pf,window)
+    if p.empty: st.warning('至少需要15個有分點資料的日期')
+    else:
+     latest=p.sort_values('date').drop_duplicates(['broker','stock'],keep='last')
+     st.dataframe(latest.sort_values('accumulation_score',ascending=False),hide_index=True)
+     st.caption('集中度依上傳股票涵蓋率而變動；公司所在地與內部人持股證據尚未串接，身分一律未確認。')
+   except Exception as err: st.error(str(err))
  with e:
   st.subheader('歷史籌碼事件回測')
   st.caption('訊號公布日後的下一交易日開盤進場，第 N 個交易日收盤出場；包含手續費與交易稅。賣超訊號也以做多報酬觀察，不代表放空交易。')
@@ -95,7 +110,10 @@ def dashboard():
    try:
     if prices is None or (brokers is None and holders is None): st.warning('必須先提供真實歷史股價及至少一種籌碼資料。')
     else:
-     summary,trades=run(prices,chips(brokers,holders,lots,change))
+     signals=chips(brokers,holders,lots,change)
+     if brokers is not None and 'date' in brokers.columns:
+      signals=pd.concat([signals,profile_signals(brokers,lots)],ignore_index=True)
+     summary,trades=run(prices,signals)
      if summary.empty: st.warning('沒有足夠可配對的歷史樣本')
      else:
       st.dataframe(summary,hide_index=True)
