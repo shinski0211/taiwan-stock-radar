@@ -5,14 +5,14 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 @st.cache_data(ttl=86400)
-def history(symbols):
+def history(symbols, days=550):
     frames=[]
     failures=[]
     end=datetime.now(ZoneInfo('Asia/Taipei')).date()+timedelta(days=1)
     for i in range(0,len(symbols),25):
         batch=symbols[i:i+25]
         try:
-            data=yf.download(batch,start=end-timedelta(days=550),end=end,auto_adjust=True,group_by='ticker',threads=4,progress=False,timeout=20)
+            data=yf.download(batch,start=end-timedelta(days=days),end=end,auto_adjust=True,group_by='ticker',threads=4,progress=False,timeout=20)
         except Exception:
             failures.extend(batch)
             continue
