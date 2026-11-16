@@ -1,0 +1,9 @@
+{
+  "status": 200,
+  "msg": "success",
+  "data": [
+    {"securities_trader": "凱基-城中", "securities_trader_id": "9202", "price": 100, "buy": 2000, "sell": 0, "stock_id": "2330", "date": "2024-11-14"},
+    {"securities_trader": "凱基-城中", "securities_trader_id": "9202", "price": 101, "buy": 1000, "sell": 500, "stock_id": "2330", "date": "2024-11-14"},
+    {"securities_trader": "元大-信義", "securities_trader_id": "9801", "price": 99.5, "buy": 0, "sell": 1500, "stock_id": "2330", "date": "2024-11-14"}
+  ]
+}

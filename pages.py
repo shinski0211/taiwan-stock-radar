@@ -3,6 +3,13 @@
 import pandas as pd
 import streamlit as st
 from backtest import chips, run
+from broker_feed import (
+    DEFAULT_CACHE,
+    SOURCE_NOTE,
+    BrokerSourceError,
+    collect_recent,
+    read_token,
+)
 from broker_profile import profile_signals, profiles
 from combined import confluence, vcp_events
 from data_access import get, institutional, load, tdcc
@@ -434,41 +441,65 @@ def _download_history(universe, codes, years):
         st.error(f'自動下載失敗：{error}')
 
 
+def broker_panel(prefix):
+    token = read_token()
+    if not token:
+        st.warning(SOURCE_NOTE)
+        return None
+    stocks = st.text_input('股票代號（逗號分隔，最多 5 檔）', '2330', key=prefix + '_stocks')
+    days = st.selectbox('往回交易日數', [5, 20, 60], index=0, key=prefix + '_days')
+    st.caption('一天一檔一次請求，間隔 0.4 秒。60 個交易日大約是三個月，不是一到兩年。')
+    if st.button('取得分點資料', type='primary', key=prefix + '_fetch'):
+        try:
+            frame = collect_recent(stocks, int(days), token, DEFAULT_CACHE)
+            st.session_state['broker_trades'] = frame
+            if frame.empty:
+                st.warning('這段期間沒有分點成交。')
+            else:
+                st.caption(f"已取得 {frame['date'].nunique()} 個交易日、{frame['broker'].nunique()} 個分點。")
+        except BrokerSourceError as error:
+            st.error(str(error))
+    frame = st.session_state.get('broker_trades')
+    return frame if isinstance(frame, pd.DataFrame) else None
+
+
 def render_broker():
     st.header('券商分點')
-    st.write('上傳授權分點資料 CSV：date,stock,broker,buy_qty,sell_qty,buy_price,sell_price（股數與元）。')
-    uploaded = take_csv('分點歷史資料', 'broker_file')
-    broker = st.text_input('分點名稱', '凱基-城中', key='broker_name')
+    st.caption('自動取得分點買賣，再估算單一券商的庫存與損益。')
+    trades = broker_panel('branch')
+    if trades is None or trades.empty:
+        return
+    ranked = (trades['buy_qty'] - trades['sell_qty']).abs().groupby(trades['broker']).sum().sort_values(ascending=False)
+    broker = st.selectbox('分點名稱', list(ranked.index), key='broker_pick')
     fee_column, tax_column = st.columns(2)
     fee = fee_column.number_input('估算單邊手續費率 %', 0.0, 1.0, 0.1425, format='%.4f', key='broker_fee')
     tax = tax_column.number_input('賣出稅率 %', 0.0, 1.0, 0.3, key='broker_tax')
-    if uploaded is not None:
-        try:
-            result = branch(uploaded, broker, fee / 100, tax / 100)
-            show_frame(
-                result,
-                column_config={
-                    '估算剩餘股數': st.column_config.NumberColumn('估算剩餘股數', format='%,.0f'),
-                    '估算均價': st.column_config.NumberColumn('估算均價', format='%,.2f'),
-                    '已配對估算損益': st.column_config.NumberColumn('已配對估算損益', format='%,.0f'),
-                    '未配對賣出股數': st.column_config.NumberColumn('未配對賣出股數', format='%,.0f'),
-                    '前筆買量對應賣出比例': st.column_config.NumberColumn('前筆買量對應賣出比例', format='percent'),
-                },
-                signed=('已配對估算損益',),
-            )
-        except Exception as error:
-            st.error(str(error))
+    try:
+        result = branch(trades, broker, fee / 100, tax / 100)
+        show_frame(
+            result,
+            column_config={
+                '估算剩餘股數': st.column_config.NumberColumn('估算剩餘股數', format='%,.0f'),
+                '估算均價': st.column_config.NumberColumn('估算均價', format='%,.2f'),
+                '已配對估算損益': st.column_config.NumberColumn('已配對估算損益', format='%,.0f'),
+                '未配對賣出股數': st.column_config.NumberColumn('未配對賣出股數', format='%,.0f'),
+                '前筆買量對應賣出比例': st.column_config.NumberColumn('前筆買量對應賣出比例', format='percent'),
+            },
+            signed=('已配對估算損益',),
+        )
+    except Exception as error:
+        st.error(str(error))
     st.caption('以可觀察期間加權成本推估；未知期初庫存、跨分點、當日成交順序都可能造成誤差。')
 
 
 def render_profile():
     st.header('主力行為與公司關聯候選')
     st.caption('分點包含多位客戶，無法確認公司派、市場派或實際隔日沖。以下為未校準行為指標，不是身分機率。')
-    uploaded = take_csv('主力行為歷史 CSV（date,stock,broker,buy_qty,sell_qty）', 'profile_file')
+    trades = broker_panel('profile')
     window = st.selectbox('觀察日曆天數', [30, 60, 90, 180], index=1, key='profile_window')
-    if uploaded is not None and st.button('分析主力行為', type='primary'):
+    if trades is not None and not trades.empty and st.button('分析主力行為', type='primary'):
         try:
-            result = profiles(uploaded, window)
+            result = profiles(trades, window)
             if result.empty:
                 st.warning('至少需要15個有分點資料的日期')
             else:
@@ -496,10 +527,10 @@ def render_profile():
 def render_backtest():
     st.header('歷史籌碼事件回測')
     st.caption('訊號公布日後的下一交易日開盤進場，第 N 個交易日收盤出場；包含手續費與交易稅。賣超訊號也以做多報酬觀察，不代表放空交易。')
-    st.write('價格 CSV：stock,date,open,close（還原權息）。分點 CSV：stock,available_date,broker,buy_qty,sell_qty（股數）。集保 CSV：stock,available_date,pct400,pct1000（百分比）。available_date 必須是實際公布日，不是資料統計日。')
+    st.write('股價 CSV：stock,date,open,close（還原權息）。沒有上傳時，會用已下載或 Yahoo 的日線。集保 CSV：stock,available_date,pct400,pct1000（百分比）。分點不再上傳，改由下方自動取得；available_date 用成交日，因為來源於當日晚間更新，回測改在下一交易日進場。')
     prices = take_csv('回測股價 CSV', 'bt_prices')
-    brokers = take_csv('回測分點 CSV', 'bt_brokers')
     holders = take_csv('回測大戶 CSV', 'bt_holders')
+    brokers = broker_panel('backtest')
     if prices is None and 'history_data' in st.session_state and not st.session_state['history_data'].empty:
         prices = st.session_state['history_data']
         st.caption('使用 VCP 頁面已自動下載的歷史行情。')
@@ -509,8 +540,29 @@ def render_backtest():
     relative = st.checkbox('VCP 要求相對大盤強度（需 TSE 指數）', True, key='bt_relative')
     lookback = st.number_input('籌碼交叉訊號有效日曆天數', 1, 60, 14, key='bt_lookback')
     if st.button('開始籌碼回測', type='primary'):
-        _run_backtest(prices, brokers, holders, lots, change, include_vcp, relative, lookback)
+        use_prices = prices
+        use_brokers = None if brokers is None or brokers.empty else brokers
+        if use_prices is None and use_brokers is not None:
+            use_prices = _prices_for(use_brokers)
+            if use_prices is None:
+                st.warning('股價下載失敗，無法回測。')
+                return
+            st.caption('股價使用 Yahoo Finance 還原日線。')
+        _run_backtest(use_prices, use_brokers, holders, lots, change, include_vcp, relative, lookback)
     st.caption('事件樣本可能重疊；目前不是資金配置回測，不計算資產最大回撤。尚未加入下市股完整樣本。')
+
+
+def _prices_for(brokers):
+    codes = [str(code) for code in brokers['stock'].astype(str).unique()]
+    data, failed = history([code + '.TW' for code in codes] + ['^TWII'], 800)
+    missing = [code + '.TWO' for code in codes if code + '.TW' in failed]
+    if missing:
+        more, _failed = history(missing, 800)
+        if more is not None and not more.empty:
+            data = more if data is None or data.empty else pd.concat([data, more], ignore_index=True)
+    if data is None or data.empty:
+        return None
+    return data
 
 
 def _run_backtest(prices, brokers, holders, lots, change, include_vcp, relative, lookback):
