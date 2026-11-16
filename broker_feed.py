@@ -21,11 +21,13 @@ MAX_STOCKS = 5
 MAX_DAYS = 60
 PAUSE_SECONDS = 0.4
 SOURCE_NOTE = (
-    '分點買賣日報沒有免驗證碼的官方下載。'
-    '證交所查詢要圖形驗證碼，櫃買中心查詢前要驗證非機器人，這個程式不會破解。'
-    '可改用你自己的 FinMind Sponsor token：環境變數 FINMIND_TOKEN，'
+    '券商買賣日報表沒有可連續下載的公開歷史檔。'
+    '證交所逐檔查詢要圖形驗證碼，櫃買中心每一檔下載前要驗證非機器人，這個程式不會破解。'
+    '證交所網路資訊商店的整包 ZIP 要登入訂購（內部使用每月新台幣 8 萬元起）；'
+    '官網上的 BSR_1.ZIP 只是沒有日期的範例檔，不能當成歷史行情。'
+    '若你有自己的 FinMind Sponsor token，可放到環境變數 FINMIND_TOKEN，'
     '或 .streamlit/secrets.toml 的 FINMIND_TOKEN。'
-    '資料自 2021-06-30 起，一天一檔一次，僅供 token 持有人自己使用。'
+    '該資料自 2021-06-30 起，一天一檔一次，僅供 token 持有人自己使用。'
 )
 
 
